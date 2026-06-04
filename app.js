@@ -28,66 +28,77 @@ const toastEl = document.getElementById("toast");
 // ---- State ----
 let currentPointId = null;
 let currentUser = null;
-const REDIRECT_TO = window.location.origin + window.location.pathname;
+const STORAGE_KEY = "audit_user_email";
 const TOGGLE_VALUES = ["pass", "fail", "na"];
 const TOGGLE_LABELS = { pass: "Pass", fail: "Fail", na: "N/A" };
 
 // ---------------------------------------------------------------------------
-// Auth
+// Access gate (email checked against the whitelist; no password / no email link)
 // ---------------------------------------------------------------------------
 buildForm();
-loginBtn.addEventListener("click", sendLink);
-loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") sendLink(); });
-signoutBtn.addEventListener("click", () => sb.auth.signOut());
+loginBtn.addEventListener("click", enterApp);
+loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") enterApp(); });
+signoutBtn.addEventListener("click", signOut);
 
-// React to sign-in / sign-out (also fires after a magic link lands on the page).
-sb.auth.onAuthStateChange((_event, session) => applyAuth(session));
-sb.auth.getSession().then(({ data }) => applyAuth(data.session));
+restoreSession();
 
-function applyAuth(session) {
-  currentUser = session ? session.user : null;
-  if (currentUser) {
-    loginView.hidden = true;
-    appView.hidden = false;
-    userBar.hidden = false;
-    userEmailEl.textContent = currentUser.email;
-    auditorDisplay.textContent = currentUser.email;
-    if (!accountSelect.dataset.loaded) {
-      accountSelect.dataset.loaded = "1";
-      loadAccounts();
-      accountSelect.addEventListener("change", onAccountChange);
-      pointSelect.addEventListener("change", onPointChange);
-      saveBtn.addEventListener("click", saveAudit);
-    }
-  } else {
-    appView.hidden = true;
-    userBar.hidden = true;
-    loginView.hidden = false;
-  }
+// On load, re-check the saved email against the whitelist so removing someone
+// locks them out on their next visit.
+async function restoreSession() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return showLoggedOut();
+  const { data: allowed, error } = await sb.rpc("is_email_allowed", { check_email: saved });
+  if (error) return showLoggedOut(); // can't verify → require re-entry
+  if (allowed) return showLoggedIn(saved);
+  localStorage.removeItem(STORAGE_KEY);
+  showLoggedOut();
 }
 
-async function sendLink() {
+async function enterApp() {
   const email = loginEmail.value.trim();
   if (!email) { loginStatus.textContent = "Enter your email."; return; }
   loginBtn.disabled = true;
   loginStatus.textContent = "Checking…";
-
-  // Validate against the whitelist first — clean message + saves email quota.
-  const { data: allowed, error: chkErr } = await sb.rpc("is_email_allowed", { check_email: email });
-  if (chkErr) { loginBtn.disabled = false; return fail("Could not verify email", chkErr); }
+  const { data: allowed, error } = await sb.rpc("is_email_allowed", { check_email: email });
+  loginBtn.disabled = false;
+  if (error) { loginStatus.textContent = ""; return fail("Could not verify email", error); }
   if (!allowed) {
-    loginBtn.disabled = false;
     loginStatus.textContent = "That email isn't on the authorized list.";
     return;
   }
+  localStorage.setItem(STORAGE_KEY, email);
+  loginStatus.textContent = "";
+  showLoggedIn(email);
+}
 
-  const { error } = await sb.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: REDIRECT_TO },
-  });
-  loginBtn.disabled = false;
-  if (error) { loginStatus.textContent = ""; return fail("Could not send sign-in link", error); }
-  loginStatus.textContent = "Check your inbox for the sign-in link.";
+function signOut() {
+  localStorage.removeItem(STORAGE_KEY);
+  loginEmail.value = "";
+  loginStatus.textContent = "";
+  showLoggedOut();
+}
+
+function showLoggedIn(email) {
+  currentUser = { email };
+  loginView.hidden = true;
+  appView.hidden = false;
+  userBar.hidden = false;
+  userEmailEl.textContent = email;
+  auditorDisplay.textContent = email;
+  if (!accountSelect.dataset.loaded) {
+    accountSelect.dataset.loaded = "1";
+    loadAccounts();
+    accountSelect.addEventListener("change", onAccountChange);
+    pointSelect.addEventListener("change", onPointChange);
+    saveBtn.addEventListener("click", saveAudit);
+  }
+}
+
+function showLoggedOut() {
+  currentUser = null;
+  appView.hidden = true;
+  userBar.hidden = true;
+  loginView.hidden = false;
 }
 
 // ---------------------------------------------------------------------------

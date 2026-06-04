@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Field Audit</title>
-  <link rel="stylesheet" href="styles.css?v=2" />
+  <link rel="stylesheet" href="styles.css?v=3" />
 </head>
 <body>
   <header>
@@ -24,14 +24,14 @@
     <!-- Login (shown when signed out) -->
     <section class="card login" id="login-view" hidden>
       <h2>Sign in</h2>
-      <p class="muted">Enter your authorized email. We'll send you a one-click sign-in link.</p>
+      <p class="muted">Enter your authorized email to continue.</p>
       <label>
         Email
-        <input type="email" id="login-email" placeholder="you@company.com" autocomplete="email" />
+        <input type="email" id="login-email" placeholder="you@championx.com" autocomplete="email" />
       </label>
       <div class="actions">
         <span id="login-status" class="muted"></span>
-        <button type="button" id="login-btn">Send sign-in link</button>
+        <button type="button" id="login-btn">Continue</button>
       </div>
     </section>
 
@@ -86,8 +86,8 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="config.js?v=2"></script>
-  <script src="questions.js?v=2"></script>
-  <script src="app.js?v=2"></script>
+  <script src="config.js?v=3"></script>
+  <script src="questions.js?v=3"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
