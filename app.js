@@ -3,11 +3,20 @@
 const sb = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY);
 
 // ---- DOM refs ----
+const loginView = document.getElementById("login-view");
+const appView = document.getElementById("app-view");
+const userBar = document.getElementById("user-bar");
+const userEmailEl = document.getElementById("user-email");
+const signoutBtn = document.getElementById("signout-btn");
+const loginEmail = document.getElementById("login-email");
+const loginBtn = document.getElementById("login-btn");
+const loginStatus = document.getElementById("login-status");
+
 const accountSelect = document.getElementById("account-select");
 const pointSelect = document.getElementById("point-select");
 const pointView = document.getElementById("point-view");
 const pointSummary = document.getElementById("point-summary");
-const auditorInput = document.getElementById("auditor");
+const auditorDisplay = document.getElementById("auditor-display");
 const form = document.getElementById("audit-form");
 const generalNotes = document.getElementById("general-notes");
 const saveBtn = document.getElementById("save-btn");
@@ -16,28 +25,74 @@ const historyEl = document.getElementById("history");
 const historyCount = document.getElementById("history-count");
 const toastEl = document.getElementById("toast");
 
-// ---- In-memory state ----
+// ---- State ----
 let currentPointId = null;
+let currentUser = null;
+const REDIRECT_TO = window.location.origin + window.location.pathname;
 const TOGGLE_VALUES = ["pass", "fail", "na"];
 const TOGGLE_LABELS = { pass: "Pass", fail: "Fail", na: "N/A" };
 
-// Remember the auditor name across audits in this session.
-auditorInput.value = sessionStorage.getItem("auditor") || "";
-auditorInput.addEventListener("input", () => sessionStorage.setItem("auditor", auditorInput.value));
-
 // ---------------------------------------------------------------------------
-// Boot
+// Auth
 // ---------------------------------------------------------------------------
-init();
+buildForm();
+loginBtn.addEventListener("click", sendLink);
+loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") sendLink(); });
+signoutBtn.addEventListener("click", () => sb.auth.signOut());
 
-async function init() {
-  buildForm();
-  await loadAccounts();
-  accountSelect.addEventListener("change", onAccountChange);
-  pointSelect.addEventListener("change", onPointChange);
-  saveBtn.addEventListener("click", saveAudit);
+// React to sign-in / sign-out (also fires after a magic link lands on the page).
+sb.auth.onAuthStateChange((_event, session) => applyAuth(session));
+sb.auth.getSession().then(({ data }) => applyAuth(data.session));
+
+function applyAuth(session) {
+  currentUser = session ? session.user : null;
+  if (currentUser) {
+    loginView.hidden = true;
+    appView.hidden = false;
+    userBar.hidden = false;
+    userEmailEl.textContent = currentUser.email;
+    auditorDisplay.textContent = currentUser.email;
+    if (!accountSelect.dataset.loaded) {
+      accountSelect.dataset.loaded = "1";
+      loadAccounts();
+      accountSelect.addEventListener("change", onAccountChange);
+      pointSelect.addEventListener("change", onPointChange);
+      saveBtn.addEventListener("click", saveAudit);
+    }
+  } else {
+    appView.hidden = true;
+    userBar.hidden = true;
+    loginView.hidden = false;
+  }
 }
 
+async function sendLink() {
+  const email = loginEmail.value.trim();
+  if (!email) { loginStatus.textContent = "Enter your email."; return; }
+  loginBtn.disabled = true;
+  loginStatus.textContent = "Checking…";
+
+  // Validate against the whitelist first — clean message + saves email quota.
+  const { data: allowed, error: chkErr } = await sb.rpc("is_email_allowed", { check_email: email });
+  if (chkErr) { loginBtn.disabled = false; return fail("Could not verify email", chkErr); }
+  if (!allowed) {
+    loginBtn.disabled = false;
+    loginStatus.textContent = "That email isn't on the authorized list.";
+    return;
+  }
+
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: REDIRECT_TO },
+  });
+  loginBtn.disabled = false;
+  if (error) { loginStatus.textContent = ""; return fail("Could not send sign-in link", error); }
+  loginStatus.textContent = "Check your inbox for the sign-in link.";
+}
+
+// ---------------------------------------------------------------------------
+// Data loading
+// ---------------------------------------------------------------------------
 async function loadAccounts() {
   const { data, error } = await sb.from("accounts").select("id,name").order("name");
   if (error) return fail("Could not load accounts", error);
@@ -97,7 +152,6 @@ async function onPointChange() {
 // ---------------------------------------------------------------------------
 function buildForm() {
   form.innerHTML = window.AUDIT_SECTIONS.map(renderSection).join("");
-  // Wire tri-state toggles via event delegation.
   form.addEventListener("click", (e) => {
     const btn = e.target.closest(".toggle button");
     if (!btn) return;
@@ -175,7 +229,7 @@ async function saveAudit() {
   formStatus.textContent = "Saving…";
   const { error } = await sb.from("audits").insert({
     injection_point_id: currentPointId,
-    auditor: auditorInput.value.trim() || null,
+    auditor: currentUser ? currentUser.email : null,
     answers,
     notes: generalNotes.value.trim() || null,
   });
@@ -222,7 +276,6 @@ function renderHistoryEntry(a) {
     (failc ? `<span class="badge fail">${failc} fail</span>` : "") +
     (pass ? `<span class="badge pass">${pass} pass</span>` : "");
 
-  // Group answers back under their sections for display.
   const sections = window.AUDIT_SECTIONS.map((s) => {
     const rows = s.items
       .filter((it) => answers[it.key] !== undefined)
