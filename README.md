@@ -26,15 +26,18 @@ saved as a dated record, so you get full history per injection point over time.
 | `config.js` | Supabase URL + publishable key (safe to commit) |
 | `styles.css` | Styling |
 
-Data lives in three Supabase tables:
+Data is modelled as **tank (parent) → wells (children)**. A *visit* captures the
+tank once plus a per-well check, so shared-tank info is never entered twice.
 
 - `accounts` — the accounts being audited
-- `injection_points` — each tank and the well it serves, tied to an account
-- `audits` — one row per audit visit; answers stored as JSON
+- `tanks` — one row per physical tank/skid, tied to an account
+- `wells` — the wells a tank serves (many per tank)
+- `visits` — one field visit to a tank; `tank_answers` (jsonb) holds the tank/skid checks
+- `well_checks` — one row per well in a visit; `answers` (jsonb) holds that well's checks
 
-`accounts` and `injection_points` are read-only from the app (managed in
-Supabase). `audits` is read/write. The email gate is enforced in the browser via
-the `is_email_allowed()` function; see the Security note above.
+`accounts`, `tanks`, and `wells` are read-only from the app (managed in Supabase).
+`visits` and `well_checks` are read/write. The email gate is enforced in the
+browser via the `is_email_allowed()` function; see the Security note above.
 
 ## Managing the email whitelist
 
@@ -51,15 +54,17 @@ Removing an email revokes access immediately. The auth setup lives in
 
 ## Editing the audit questions
 
-Open `questions.js`. To reword a question, change its `label`. To add or remove
-one, edit the `items` array. Keep each `key` stable — that's how answers are
-stored. The form and the history view both update automatically.
+Open `questions.js`. Items are split into `TANK_SECTIONS` (filled once per visit)
+and `WELL_SECTIONS` (filled per well). To reword a question, change its `label`;
+to move an item between tank- and well-level, cut/paste it between the two lists.
+Keep each `key` stable and unique — that's how answers are stored. The form,
+history, and dashboard all update automatically.
 
-## Adding accounts & injection points
+## Adding accounts, tanks & wells
 
-Edit `seed.sql` with your real accounts and injection points, then run it in the
-Supabase SQL editor (Dashboard → SQL Editor), or send the list and it can be
-loaded for you.
+Edit `seed.sql` with your real accounts, tanks, and the wells each tank serves,
+then run it in the Supabase SQL editor (Dashboard → SQL Editor), or send the list
+and it can be loaded for you.
 
 ## Deploying to GitHub Pages
 

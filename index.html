@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f141a" />
   <title>Field Audit</title>
   <script>try { document.documentElement.dataset.theme = localStorage.getItem("audit_theme") || "dark"; } catch (e) {}</script>
-  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="styles.css?v=6" />
 </head>
 <body>
   <!-- LOGIN -->
@@ -66,9 +66,9 @@
         </div>
       </section>
 
-      <!-- AUDIT -->
+      <!-- AUDIT / VISIT -->
       <section id="audit-view" class="tab-view" hidden>
-        <div class="view-head"><h2>New audit</h2></div>
+        <div class="view-head"><h2>New visit</h2></div>
 
         <div class="panel">
           <label class="field">
@@ -76,33 +76,36 @@
             <select id="account-select"><option value="">Loading…</option></select>
           </label>
           <label class="field">
-            <span>Injection point (Tank → Well)</span>
-            <select id="point-select" disabled><option value="">Select an account first</option></select>
+            <span>Tank</span>
+            <select id="tank-select" disabled><option value="">Select an account first</option></select>
           </label>
         </div>
 
-        <div id="point-view" hidden>
+        <div id="visit-view" hidden>
           <div class="panel">
-            <div class="panel-head">
-              <h3 id="point-summary"></h3>
-            </div>
+            <div class="panel-head"><h3 id="tank-summary"></h3></div>
             <p class="auditor-line">Auditor: <strong id="auditor-display"></strong></p>
+            <div id="tank-fields"></div>
+          </div>
 
-            <form id="audit-form"></form>
+          <div class="panel">
+            <div class="panel-head"><h3>Wells on this tank</h3><span id="wells-count" class="muted"></span></div>
+            <div id="wells"></div>
+          </div>
 
+          <div class="panel">
             <label class="field">
               <span>General notes (optional)</span>
               <textarea id="general-notes" rows="2" placeholder="Anything else worth recording…"></textarea>
             </label>
-
             <div class="form-actions">
               <span id="form-status" class="hint"></span>
-              <button type="button" id="save-btn" class="btn-primary">Save audit</button>
+              <button type="button" id="save-btn" class="btn-primary">Save visit</button>
             </div>
           </div>
 
           <div class="panel">
-            <div class="panel-head"><h3>History</h3><span id="history-count" class="muted"></span></div>
+            <div class="panel-head"><h3>Visit history</h3><span id="history-count" class="muted"></span></div>
             <div id="history"><p class="muted">Loading…</p></div>
           </div>
         </div>
@@ -125,8 +128,8 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="config.js?v=5"></script>
-  <script src="questions.js?v=5"></script>
-  <script src="app.js?v=5"></script>
+  <script src="config.js?v=6"></script>
+  <script src="questions.js?v=6"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
