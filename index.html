@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Field Audit</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Field Audit</h1>
+    <p class="sub">Injection point inspections</p>
+  </header>
+
+  <main>
+    <!-- Selection -->
+    <section class="card" id="selector">
+      <div class="row">
+        <label>
+          Account
+          <select id="account-select"><option value="">Loading…</option></select>
+        </label>
+        <label>
+          Injection point (Tank → Well)
+          <select id="point-select" disabled><option value="">Select an account first</option></select>
+        </label>
+      </div>
+    </section>
+
+    <div id="point-view" hidden>
+      <!-- New audit form -->
+      <section class="card">
+        <div class="card-head">
+          <h2>New audit</h2>
+          <span id="point-summary" class="muted"></span>
+        </div>
+
+        <label class="auditor">
+          Auditor name
+          <input type="text" id="auditor" placeholder="Your name" autocomplete="name" />
+        </label>
+
+        <form id="audit-form"><!-- sections injected here by app.js --></form>
+
+        <label class="auditor">
+          General notes (optional)
+          <textarea id="general-notes" rows="2" placeholder="Anything else worth recording…"></textarea>
+        </label>
+
+        <div class="actions">
+          <span id="form-status" class="muted"></span>
+          <button type="button" id="save-btn">Save audit</button>
+        </div>
+      </section>
+
+      <!-- History -->
+      <section class="card">
+        <div class="card-head">
+          <h2>Audit history</h2>
+          <span id="history-count" class="muted"></span>
+        </div>
+        <div id="history"><p class="muted">Loading…</p></div>
+      </section>
+    </div>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- Supabase JS client (UMD build) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="questions.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
