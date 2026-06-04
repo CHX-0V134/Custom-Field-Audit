@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f141a" />
   <title>Field Audit</title>
   <script>try { document.documentElement.dataset.theme = localStorage.getItem("audit_theme") || "dark"; } catch (e) {}</script>
-  <link rel="stylesheet" href="styles.css?v=6" />
+  <link rel="stylesheet" href="styles.css?v=7" />
 </head>
 <body>
   <!-- LOGIN -->
@@ -37,6 +37,10 @@
           <strong id="view-title">Dashboard</strong>
         </div>
         <div class="topbar-actions">
+          <button type="button" id="filter-btn" class="icon-btn" title="Filters" aria-label="Filters">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+            <span id="filter-badge" class="badge-dot" hidden></span>
+          </button>
           <button type="button" id="theme-btn" class="icon-btn" title="Toggle light / dark" aria-label="Toggle theme"></button>
           <button type="button" id="signout-btn" class="chip" title="Sign out">
             <span id="user-email"></span>
@@ -46,6 +50,20 @@
       </div>
     </header>
 
+    <!-- BOTTOM NAV (mobile) / TOP NAV (desktop) -->
+    <nav class="tabbar">
+      <div class="tabbar-inner">
+        <button type="button" class="tab" data-tab="dashboard" aria-current="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" fill="currentColor"/></svg>
+          <span>Dashboard</span>
+        </button>
+        <button type="button" class="tab" data-tab="audit">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-6 9l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Audit</span>
+        </button>
+      </div>
+    </nav>
+
     <main>
       <!-- DASHBOARD -->
       <section id="dashboard-view" class="tab-view">
@@ -53,6 +71,7 @@
           <h2>Dashboard</h2>
           <button type="button" id="refresh-btn" class="ghost-btn">Refresh</button>
         </div>
+        <p id="dash-filter-note" class="filter-note" hidden></p>
         <div id="kpis" class="kpi-grid"></div>
 
         <div class="panel">
@@ -76,9 +95,14 @@
             <select id="account-select"><option value="">Loading…</option></select>
           </label>
           <label class="field">
+            <span>Search tanks</span>
+            <input type="search" id="tank-search" placeholder="Filter by tank name…" autocomplete="off" />
+          </label>
+          <label class="field">
             <span>Tank</span>
             <select id="tank-select" disabled><option value="">Select an account first</option></select>
           </label>
+          <p id="tank-filter-note" class="muted"></p>
         </div>
 
         <div id="visit-view" hidden>
@@ -112,24 +136,30 @@
       </section>
     </main>
 
-    <!-- BOTTOM NAV -->
-    <nav class="tabbar">
-      <button type="button" class="tab" data-tab="dashboard" aria-current="true">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" fill="currentColor"/></svg>
-        <span>Dashboard</span>
-      </button>
-      <button type="button" class="tab" data-tab="audit">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2m-6 9l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span>Audit</span>
-      </button>
-    </nav>
+    <!-- FILTER DRAWER -->
+    <div id="filter-drawer" class="drawer" hidden>
+      <div class="drawer-scrim" data-close></div>
+      <aside class="drawer-panel" role="dialog" aria-label="Filters">
+        <div class="drawer-head">
+          <h3>Filters</h3>
+          <div class="drawer-head-actions">
+            <button type="button" id="filter-clear" class="link-btn">Clear all</button>
+            <button type="button" class="icon-btn" data-close aria-label="Close filters">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+        <p id="filter-count" class="muted"></p>
+        <div id="filter-groups"></div>
+      </aside>
+    </div>
   </div>
 
   <div id="toast" class="toast" hidden></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="config.js?v=6"></script>
-  <script src="questions.js?v=6"></script>
-  <script src="app.js?v=6"></script>
+  <script src="config.js?v=7"></script>
+  <script src="questions.js?v=7"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>
