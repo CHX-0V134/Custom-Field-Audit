@@ -52,6 +52,23 @@ loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") enterApp(
 signoutBtn.addEventListener("click", signOut);
 refreshBtn.addEventListener("click", loadDashboard);
 tabs.forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.tab)));
+
+// Theme (light / dark) — preference persisted; inline <head> script avoids flash.
+const themeBtn = document.getElementById("theme-btn");
+const SUN_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const MOON_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("audit_theme", theme); } catch (e) {}
+  themeBtn.innerHTML = theme === "dark" ? SUN_ICON : MOON_ICON;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", theme === "dark" ? "#0f141a" : "#f1f4f8");
+}
+applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+themeBtn.addEventListener("click", () =>
+  applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light")
+);
+
 restoreSession();
 
 async function restoreSession() {
