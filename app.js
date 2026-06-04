@@ -304,14 +304,21 @@ function selectTank(tankId) {
 }
 
 function renderWells(wells) {
-  wellsEl.innerHTML = wells.map((w, i) => renderWellCard(w, i === 0)).join("");
+  const first = wells[0];
+  wellsEl.innerHTML = wells.map((w, i) => renderWellCard(w, i === 0, wells.length, first)).join("");
   wellsEl.querySelectorAll(".well-card").forEach(updateWellStatus);
 }
 
-function renderWellCard(w, open) {
+function renderWellCard(w, open, total, first) {
+  let copy = "";
+  if (total > 1) {
+    copy = open
+      ? `<div class="wc-copy"><button type="button" class="copy-btn" data-action="copy-all">Copy checks to all wells ↓</button></div>`
+      : `<div class="wc-copy"><button type="button" class="copy-btn" data-action="copy-from-first">Same checks as ${esc(first.name)}</button></div>`;
+  }
   return `<details class="well-card" data-well="${w.id}"${open ? " open" : ""}>
       <summary class="wc-summary"><span class="wc-name">${esc(w.name)}</span><span class="wc-status">Not started</span></summary>
-      <div class="wc-body">${window.WELL_SECTIONS.map((s) => renderSection(s, w.id)).join("")}</div>
+      <div class="wc-body">${copy}${window.WELL_SECTIONS.map((s) => renderSection(s, w.id)).join("")}</div>
     </details>`;
 }
 
@@ -451,6 +458,8 @@ function updateWellStatus(card) {
 }
 
 function onVisitClick(e) {
+  const copy = e.target.closest(".copy-btn");
+  if (copy) { handleCopy(copy); return; }
   const btn = e.target.closest(".toggle button");
   if (!btn) return;
   const group = btn.parentElement;
@@ -465,6 +474,37 @@ function onVisitClick(e) {
 function onVisitInput(e) {
   const card = e.target.closest(".well-card");
   if (card) updateWellStatus(card);
+  saveDraft();
+}
+
+// Copy the first well's toggle checks (not injection rates) to other wells.
+function toggleAnswers(card) {
+  const a = {};
+  card.querySelectorAll(".toggle").forEach((g) => { if (g.dataset.value) a[g.dataset.key] = g.dataset.value; });
+  return a;
+}
+function overlayToggles(card, answers) {
+  card.querySelectorAll(".toggle").forEach((g) => {
+    if (answers[g.dataset.key] === undefined) return;
+    const val = answers[g.dataset.key];
+    g.dataset.value = val;
+    g.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.val === val ? "true" : "false"));
+  });
+}
+function handleCopy(btn) {
+  const cards = [...wellsEl.querySelectorAll(".well-card")];
+  if (cards.length < 2) return;
+  const src = toggleAnswers(cards[0]);
+  if (Object.keys(src).length === 0) { toast("Fill in the first well's checks first"); return; }
+  if (btn.dataset.action === "copy-all") {
+    cards.slice(1).forEach((c) => { overlayToggles(c, src); updateWellStatus(c); });
+    toast("Checks copied to all wells");
+  } else {
+    const target = btn.closest(".well-card");
+    overlayToggles(target, src);
+    updateWellStatus(target);
+    toast("Checks copied");
+  }
   saveDraft();
 }
 
