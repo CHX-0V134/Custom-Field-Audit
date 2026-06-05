@@ -46,7 +46,7 @@ const TANK_SECTIONS = [
     id: "chemical",
     title: "Chemical & Inventory",
     items: [
-      { key: "chemical_product_name", label: "Chemical product name", type: "text", placeholder: "e.g. Methanol, Scale inhibitor X" },
+      { key: "chemical_product_name", label: "Chemical product name", type: "select", placeholder: "Select product…" },
       { key: "current_inventory_volume", label: "Current inventory volume", type: "number", unit: "gal" },
     ],
   },

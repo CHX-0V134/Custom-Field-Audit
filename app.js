@@ -61,6 +61,7 @@ const WELL_ITEM_COUNT = window.WELL_SECTIONS.reduce((n, s) => n + s.items.length
 let accountsList = [], allTanks = [], allWells = [];
 let tankById = {}, wellsByTank = {}, assetTypesByTank = {};
 let filterOptions = { state: [], location: [], product: [], asset_type: [] };
+let selectOptions = {}; // dropdown options for select-type questions, e.g. product list
 const filters = { state: new Set(), location: new Set(), product: new Set(), asset_type: new Set() };
 let tankSearchVal = "";
 const FILTER_GROUPS = [
@@ -189,6 +190,7 @@ async function loadCatalog() {
     product: distinct(allTanks.map((t) => t.product)),
     asset_type: distinct(allWells.map((w) => w.asset_type)),
   };
+  selectOptions = { chemical_product_name: filterOptions.product };
 
   accountSelect.innerHTML = '<option value="">Select an account…</option>' + accountsList.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("");
   if (accountsList.length === 1) accountSelect.value = accountsList[0].id;
@@ -294,6 +296,7 @@ function selectTank(tankId) {
   const wells = wellsByTank[tankId] || [];
   currentWellsById = Object.fromEntries(wells.map((w) => [w.id, w.name]));
   tankFields.innerHTML = window.TANK_SECTIONS.map((s) => renderSection(s, "tank")).join("");
+  setProductDefault();
   renderWells(wells);
   wellsCount.textContent = wells.length ? `${wells.length} well${wells.length === 1 ? "" : "s"}` : "no wells";
   generalNotes.value = "";
@@ -426,9 +429,15 @@ function renderToggleItem(item) {
 function renderRecordItem(item, scope) {
   const id = `f_${scope}_${item.key}`;
   const ph = item.placeholder ? ` placeholder="${esc(item.placeholder)}"` : "";
-  const input = item.type === "number"
-    ? `<div class="input-unit"><input type="number" step="any" inputmode="decimal" id="${id}" data-key="${item.key}"${ph} />${item.unit ? `<span class="unit">${esc(item.unit)}</span>` : ""}</div>`
-    : `<input type="text" id="${id}" data-key="${item.key}"${ph} />`;
+  let input;
+  if (item.type === "number") {
+    input = `<div class="input-unit"><input type="number" step="any" inputmode="decimal" id="${id}" data-key="${item.key}"${ph} />${item.unit ? `<span class="unit">${esc(item.unit)}</span>` : ""}</div>`;
+  } else if (item.type === "select") {
+    const opts = (selectOptions[item.key] || []).map((o) => `<option value="${esc(o)}">${esc(o)}</option>`).join("");
+    input = `<select id="${id}" data-key="${item.key}"><option value="">${esc(item.placeholder || "Select…")}</option>${opts}</select>`;
+  } else {
+    input = `<input type="text" id="${id}" data-key="${item.key}"${ph} />`;
+  }
   return `<div class="item record"><label class="item-label" for="${id}">${esc(item.label)}</label>${input}</div>`;
 }
 
@@ -439,6 +448,7 @@ function collectFrom(container) {
     const v = i.value.trim();
     if (v !== "") answers[i.dataset.key] = i.type === "number" ? Number(v) : v;
   });
+  container.querySelectorAll("select[data-key]").forEach((s) => { if (s.value) answers[s.dataset.key] = s.value; });
   return answers;
 }
 function applyAnswers(container, answers) {
@@ -448,6 +458,7 @@ function applyAnswers(container, answers) {
     g.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.val === val ? "true" : "false"));
   });
   container.querySelectorAll("input[data-key]").forEach((i) => { if (answers[i.dataset.key] !== undefined) i.value = answers[i.dataset.key]; });
+  container.querySelectorAll("select[data-key]").forEach((s) => { if (answers[s.dataset.key] !== undefined) s.value = answers[s.dataset.key]; });
 }
 function updateWellStatus(card) {
   const n = Object.keys(collectFrom(card)).length;
@@ -562,6 +573,7 @@ async function saveVisit() {
 function resetVisitForm() {
   applyAnswers(tankFields, {});
   tankFields.querySelectorAll("input[data-key]").forEach((i) => (i.value = ""));
+  tankFields.querySelectorAll("select[data-key]").forEach((s) => (s.value = ""));
   wellsEl.querySelectorAll(".well-card").forEach((c) => {
     applyAnswers(c, {});
     c.querySelectorAll("input[data-key]").forEach((i) => (i.value = ""));
@@ -569,6 +581,15 @@ function resetVisitForm() {
   });
   generalNotes.value = "";
   formStatus.textContent = "";
+  setProductDefault();
+}
+
+// Pre-fill the Chemical product dropdown from the tank's product (still editable).
+function setProductDefault() {
+  if (!currentTank) return;
+  const t = tankById[currentTank.id];
+  const sel = tankFields.querySelector('select[data-key="chemical_product_name"]');
+  if (sel && t && t.product) sel.value = t.product;
 }
 
 // ---------------------------------------------------------------------------
