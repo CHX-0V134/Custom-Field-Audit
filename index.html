@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <title>Field Audit</title>
   <script>try { document.documentElement.dataset.theme = localStorage.getItem("audit_theme") || "dark"; } catch (e) {}</script>
-  <link rel="stylesheet" href="styles.css?v=17" />
+  <link rel="stylesheet" href="styles.css?v=18" />
 </head>
 <body>
   <!-- LOGIN -->
@@ -130,24 +130,33 @@
 
         <div id="visit-view" hidden>
           <div class="panel">
-            <div class="panel-head"><h3 id="tank-summary"></h3></div>
-            <p class="auditor-line">Auditor: <strong id="auditor-display"></strong></p>
-            <div id="tank-fields"></div>
+            <div class="visit-head">
+              <h3 id="tank-summary"></h3>
+              <button type="button" id="new-visit-btn" class="btn-primary compact">+ New visit</button>
+            </div>
           </div>
 
-          <div class="panel">
-            <div class="panel-head"><h3>Wells on this tank</h3><span id="wells-count" class="muted"></span></div>
-            <div id="wells"></div>
-          </div>
+          <div id="entry-form" hidden>
+            <div class="panel">
+              <p class="auditor-line">Auditor: <strong id="auditor-display"></strong></p>
+              <div id="tank-fields"></div>
+            </div>
 
-          <div class="panel">
-            <label class="field">
-              <span>General notes (optional)</span>
-              <textarea id="general-notes" rows="2" placeholder="Anything else worth recording…"></textarea>
-            </label>
-            <div class="form-actions">
-              <span id="form-status" class="hint"></span>
-              <button type="button" id="save-btn" class="btn-primary">Save visit</button>
+            <div class="panel">
+              <div class="panel-head"><h3>Wells on this tank</h3><span id="wells-count" class="muted"></span></div>
+              <div id="wells"></div>
+            </div>
+
+            <div class="panel">
+              <label class="field">
+                <span>General notes (optional)</span>
+                <textarea id="general-notes" rows="2" placeholder="Anything else worth recording…"></textarea>
+              </label>
+              <div class="form-actions">
+                <span id="form-status" class="hint"></span>
+                <button type="button" id="cancel-visit-btn" class="ghost-btn">Cancel</button>
+                <button type="button" id="save-btn" class="btn-primary">Save visit</button>
+              </div>
             </div>
           </div>
 
@@ -226,10 +235,10 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="supabase.min.js"></script>
-  <script src="config.js?v=17"></script>
-  <script src="questions.js?v=17"></script>
-  <script src="db.js?v=17"></script>
-  <script src="app.js?v=17"></script>
+  <script src="config.js?v=18"></script>
+  <script src="questions.js?v=18"></script>
+  <script src="db.js?v=18"></script>
+  <script src="app.js?v=18"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));

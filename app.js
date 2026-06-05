@@ -38,6 +38,9 @@ const tankSelect = document.getElementById("tank-select");
 const tankSearch = document.getElementById("tank-search");
 const tankFilterNote = document.getElementById("tank-filter-note");
 const visitView = document.getElementById("visit-view");
+const entryForm = document.getElementById("entry-form");
+const newVisitBtn = document.getElementById("new-visit-btn");
+const cancelVisitBtn = document.getElementById("cancel-visit-btn");
 const tankSummary = document.getElementById("tank-summary");
 const auditorDisplay = document.getElementById("auditor-display");
 const tankFields = document.getElementById("tank-fields");
@@ -104,6 +107,8 @@ accountSelect.addEventListener("change", onAccountChange);
 tankSelect.addEventListener("change", () => selectTank(tankSelect.value));
 tankSearch.addEventListener("input", () => { tankSearchVal = tankSearch.value.trim().toLowerCase(); populateTankSelect(); });
 saveBtn.addEventListener("click", saveVisit);
+newVisitBtn.addEventListener("click", showEntryForm);
+cancelVisitBtn.addEventListener("click", showDetails);
 visitView.addEventListener("click", onVisitClick);
 visitView.addEventListener("input", onVisitInput);
 
@@ -380,7 +385,25 @@ function selectTank(tankId) {
   formStatus.textContent = "";
   restoreDraft();
   visitView.hidden = false;
+  showDetails();
   loadHistory();
+}
+
+// Details-first: a selected tank shows its history; the entry form opens on demand.
+function hasDraft() {
+  try { return !!(currentTank && localStorage.getItem("draft_" + currentTank.id)); } catch (e) { return false; }
+}
+function showDetails() {
+  entryForm.hidden = true;
+  newVisitBtn.hidden = false;
+  newVisitBtn.textContent = hasDraft() ? "Resume draft" : "+ New visit";
+  newVisitBtn.classList.toggle("resume", hasDraft());
+}
+function showEntryForm() {
+  entryForm.hidden = false;
+  newVisitBtn.hidden = true;
+  formStatus.textContent = hasDraft() ? "Draft restored" : "";
+  entryForm.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderWells(wells) {
@@ -842,7 +865,12 @@ function saveDraft() {
   if (!currentTank) return;
   const draft = { tank: collectFrom(tankFields), wells: {}, notes: generalNotes.value };
   wellsEl.querySelectorAll(".well-card").forEach((c) => { draft.wells[c.dataset.well] = collectFrom(c); });
-  try { localStorage.setItem(draftKey(), JSON.stringify(draft)); } catch (e) {}
+  const empty = Object.keys(draft.tank).length === 0 && !draft.notes.trim() &&
+    Object.values(draft.wells).every((o) => Object.keys(o).length === 0);
+  try {
+    if (empty) localStorage.removeItem(draftKey());
+    else localStorage.setItem(draftKey(), JSON.stringify(draft));
+  } catch (e) {}
 }
 function restoreDraft() {
   let draft;
@@ -892,6 +920,7 @@ async function saveVisit() {
   saveBtn.disabled = false;
   clearDraft();
   resetVisitForm();
+  showDetails();
   toast(navigator.onLine ? "Visit saved" : "Saved offline — will sync");
   await refreshSync();
   await loadHistory();
@@ -1024,6 +1053,8 @@ async function loadHistory() {
     return;
   }
   historyEl.innerHTML = pendings.map(renderPendingEntry).join("") + server.map(renderVisitEntry).join("");
+  const firstEntry = historyEl.querySelector(".audit-entry");
+  if (firstEntry) firstEntry.open = true; // show the most recent audit's details by default
   historyEl.querySelectorAll(".del-visit:not(.del-pending)").forEach((b) => b.addEventListener("click", () => deleteVisit(b.dataset.id)));
   historyEl.querySelectorAll(".del-pending").forEach((b) => b.addEventListener("click", () => discardPending(b.dataset.id)));
 }
