@@ -105,6 +105,13 @@ syncDrawer.addEventListener("click", (e) => { if (e.target.closest("[data-close]
 syncNow.addEventListener("click", flushQueue);
 window.addEventListener("online", () => { toast("Back online — syncing…"); refreshSync(); flushQueue(); });
 window.addEventListener("offline", () => { toast("You're offline — saves stay on this device"); refreshSync(); });
+// Self-healing retry: while anything is queued, keep trying in the background so
+// the user never has to sync manually — even on flaky/low signal.
+setInterval(async () => {
+  if (!navigator.onLine) return;
+  let n = 0; try { n = await window.AuditDB.count(); } catch (e) {}
+  if (n > 0) flushQueue();
+}, 30000);
 
 const themeBtn = document.getElementById("theme-btn");
 const SUN_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
@@ -396,14 +403,27 @@ async function loadDashboard() {
       activityEl.innerHTML = `<p class="empty">${pending} visit${pending === 1 ? "" : "s"} saved on this device, waiting to sync.</p>`;
       return;
     }
-    const visitRes = await sb.from("visits")
-      .select("id,tank_id,auditor,audited_at,tank_answers,well_checks(well_id,answers)")
-      .order("audited_at", { ascending: false });
-    if (visitRes.error) return fail("Could not load dashboard", visitRes.error);
+    let allVisits;
+    try {
+      const visitRes = await withTimeout(sb.from("visits")
+        .select("id,tank_id,auditor,audited_at,tank_answers,well_checks(well_id,answers)")
+        .order("audited_at", { ascending: false }), 12000);
+      if (visitRes.error) throw visitRes.error;
+      allVisits = visitRes.data;
+    } catch (e) {
+      // Weak signal / server unreachable — stay usable, don't error out.
+      let pending = 0; try { pending = await window.AuditDB.count(); } catch (_) {}
+      kpisEl.innerHTML = "";
+      attentionCount.textContent = "";
+      dashFilterNote.hidden = true;
+      attentionEl.innerHTML = '<p class="empty">Couldn\'t reach the server (weak signal). Tap Refresh when you have a better connection.</p>';
+      activityEl.innerHTML = `<p class="empty">${pending} visit${pending === 1 ? "" : "s"} saved on this device, waiting to sync.</p>`;
+      return;
+    }
 
     const fTanks = allTanks.filter(tankPasses);
     const passIds = new Set(fTanks.map((t) => t.id));
-    const visits = visitRes.data.filter((v) => passIds.has(v.tank_id));
+    const visits = allVisits.filter((v) => passIds.has(v.tank_id));
     const acctById = Object.fromEntries(accountsList.map((a) => [a.id, a.name]));
     const wellName = Object.fromEntries(allWells.map((w) => [w.id, w.name]));
     const visitFails = (v) => countFails(v.tank_answers) + (v.well_checks || []).reduce((n, wc) => n + countFails(wc.answers), 0);
@@ -656,8 +676,8 @@ async function flushQueue() {
     for (const item of items) {
       if (item.status === "error") continue; // wait for a manual retry
       let res;
-      try { res = await sb.rpc("submit_visit", { payload: item.payload }); }
-      catch (e) { break; } // network failure — stop, keep everything queued
+      try { res = await withTimeout(sb.rpc("submit_visit", { payload: item.payload }), 12000); }
+      catch (e) { break; } // network failure / timeout — stop, keep everything queued, retry later
       if (res && res.error) {
         if (res.error.code) { await window.AuditDB.put({ ...item, status: "error", error: res.error.message }); changed = true; }
         else break; // transient — stop and retry later
@@ -755,9 +775,9 @@ async function loadHistory() {
   let server = [];
   if (navigator.onLine) {
     try {
-      const { data, error } = await sb.from("visits")
+      const { data, error } = await withTimeout(sb.from("visits")
         .select("id,auditor,audited_at,tank_answers,notes,well_checks(well_id,answers)")
-        .eq("tank_id", currentTank.id).order("audited_at", { ascending: false });
+        .eq("tank_id", currentTank.id).order("audited_at", { ascending: false }), 10000);
       if (!error && data) server = data;
     } catch (e) {}
   }
@@ -843,6 +863,13 @@ function uuid() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0, v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
+  });
+}
+// Fail-fast wrapper so a weak connection can't make a request hang indefinitely.
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("timeout")), ms || 12000);
+    Promise.resolve(promise).then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
   });
 }
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
