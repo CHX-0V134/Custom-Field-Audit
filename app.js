@@ -47,6 +47,14 @@ const filterClear = document.getElementById("filter-clear");
 const filterGroups = document.getElementById("filter-groups");
 const filterCount = document.getElementById("filter-count");
 
+const syncBtn = document.getElementById("sync-btn");
+const syncBadge = document.getElementById("sync-badge");
+const syncDrawer = document.getElementById("sync-drawer");
+const syncStatus = document.getElementById("sync-status");
+const syncNow = document.getElementById("sync-now");
+const syncList = document.getElementById("sync-list");
+const offlineBanner = document.getElementById("offline-banner");
+
 // ---- State ----
 let currentUser = null;
 let currentTank = null;
@@ -92,6 +100,12 @@ filterDrawer.addEventListener("click", (e) => { if (e.target.closest("[data-clos
 filterClear.addEventListener("click", clearFilters);
 filterGroups.addEventListener("click", onFilterChip);
 
+syncBtn.addEventListener("click", () => { syncDrawer.hidden = false; renderSyncList(); });
+syncDrawer.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) syncDrawer.hidden = true; });
+syncNow.addEventListener("click", flushQueue);
+window.addEventListener("online", () => { toast("Back online — syncing…"); refreshSync(); flushQueue(); });
+window.addEventListener("offline", () => { toast("You're offline — saves stay on this device"); refreshSync(); });
+
 const themeBtn = document.getElementById("theme-btn");
 const SUN_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
 const MOON_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
@@ -110,19 +124,30 @@ restoreSession();
 async function restoreSession() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) return showLoggedOut();
-  const { data: allowed, error } = await sb.rpc("is_email_allowed", { check_email: saved });
-  if (error) return showLoggedOut();
-  if (allowed) return showLoggedIn(saved);
-  localStorage.removeItem(STORAGE_KEY);
-  showLoggedOut();
+  // Offline (or a flaky check): trust the previously-validated email so the
+  // auditor can keep working in the field. It was only stored after a prior
+  // successful online check.
+  if (!navigator.onLine) return showLoggedIn(saved);
+  try {
+    const { data: allowed, error } = await sb.rpc("is_email_allowed", { check_email: saved });
+    if (error) return showLoggedIn(saved);
+    if (allowed) return showLoggedIn(saved);
+    localStorage.removeItem(STORAGE_KEY);
+    showLoggedOut();
+  } catch (e) {
+    showLoggedIn(saved);
+  }
 }
 
 async function enterApp() {
   const email = loginEmail.value.trim();
   if (!email) { loginStatus.textContent = "Enter your email."; return; }
+  if (!navigator.onLine) { loginStatus.textContent = "You're offline. Connect to the internet once to sign in the first time."; return; }
   loginBtn.disabled = true;
   loginStatus.textContent = "Checking…";
-  const { data: allowed, error } = await sb.rpc("is_email_allowed", { check_email: email });
+  let allowed, error;
+  try { ({ data: allowed, error } = await sb.rpc("is_email_allowed", { check_email: email })); }
+  catch (e) { error = e; }
   loginBtn.disabled = false;
   if (error) { loginStatus.textContent = ""; return fail("Could not verify email", error); }
   if (!allowed) { loginStatus.textContent = "That email isn't on the authorized list."; return; }
@@ -145,6 +170,8 @@ async function showLoggedIn(email) {
   userEmailEl.textContent = email;
   auditorDisplay.textContent = email;
   if (!wired) { wired = true; await loadCatalog(); }
+  refreshSync();
+  flushQueue();
   switchTab("dashboard");
 }
 
@@ -167,14 +194,38 @@ function switchTab(name) {
 // Catalog + filters
 // ---------------------------------------------------------------------------
 async function loadCatalog() {
-  const [accRes, tankRes, wellRes] = await Promise.all([
-    sb.from("accounts").select("id,name").order("name"),
-    sb.from("tanks").select("id,account_id,label,state,location,product").order("label"),
-    sb.from("wells").select("id,tank_id,name,asset_type"),
-  ]);
-  if (accRes.error || tankRes.error || wellRes.error) return fail("Could not load catalog", accRes.error || tankRes.error || wellRes.error);
+  // Cache-first: apply the saved tank list instantly so the app works offline
+  // and never blocks on the network. Then refresh in the background if online.
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem("catalog_cache") || "null"); } catch (e) {}
+  if (cached) {
+    applyCatalog(cached);
+    if (navigator.onLine) refreshCatalog();
+    return;
+  }
+  if (navigator.onLine) {
+    const fresh = await fetchCatalog();
+    if (fresh) { cacheCatalog(fresh); applyCatalog(fresh); return; }
+  }
+  fail("Couldn't load the tank list. Connect to the internet once to download it.");
+}
 
-  accountsList = accRes.data; allTanks = tankRes.data; allWells = wellRes.data;
+async function fetchCatalog() {
+  try {
+    const [accRes, tankRes, wellRes] = await Promise.all([
+      sb.from("accounts").select("id,name").order("name"),
+      sb.from("tanks").select("id,account_id,label,state,location,product").order("label"),
+      sb.from("wells").select("id,tank_id,name,asset_type"),
+    ]);
+    if (accRes.error || tankRes.error || wellRes.error) return null;
+    return { accounts: accRes.data, tanks: tankRes.data, wells: wellRes.data };
+  } catch (e) { return null; }
+}
+function cacheCatalog(data) { try { localStorage.setItem("catalog_cache", JSON.stringify(data)); } catch (e) {} }
+async function refreshCatalog() { const fresh = await fetchCatalog(); if (fresh) { cacheCatalog(fresh); applyCatalog(fresh); } }
+
+function applyCatalog(data) {
+  accountsList = data.accounts; allTanks = data.tanks; allWells = data.wells;
   tankById = Object.fromEntries(allTanks.map((t) => [t.id, t]));
   wellsByTank = {}; assetTypesByTank = {};
   for (const w of allWells) {
@@ -192,8 +243,10 @@ async function loadCatalog() {
   };
   selectOptions = { chemical_product_name: filterOptions.product };
 
+  const prevAcct = accountSelect.value;
   accountSelect.innerHTML = '<option value="">Select an account…</option>' + accountsList.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("");
-  if (accountsList.length === 1) accountSelect.value = accountsList[0].id;
+  if (prevAcct && accountsList.some((a) => a.id === prevAcct)) accountSelect.value = prevAcct;
+  else if (accountsList.length === 1) accountSelect.value = accountsList[0].id;
   renderFilterGroups();
   populateTankSelect();
 }
@@ -333,6 +386,16 @@ async function loadDashboard() {
   if (dashboardLoading || !allTanks.length) { if (!allTanks.length) return; }
   dashboardLoading = true;
   try {
+    if (!navigator.onLine) {
+      let pending = 0;
+      try { pending = await window.AuditDB.count(); } catch (e) {}
+      kpisEl.innerHTML = "";
+      attentionCount.textContent = "";
+      dashFilterNote.hidden = true;
+      attentionEl.innerHTML = '<p class="empty">Dashboard needs a connection. You can still record audits offline from the Audit tab.</p>';
+      activityEl.innerHTML = `<p class="empty">${pending} visit${pending === 1 ? "" : "s"} saved on this device, waiting to sync.</p>`;
+      return;
+    }
     const visitRes = await sb.from("visits")
       .select("id,tank_id,auditor,audited_at,tank_answers,well_checks(well_id,answers)")
       .order("audited_at", { ascending: false });
@@ -546,28 +609,115 @@ async function saveVisit() {
   const wellRows = [];
   wellsEl.querySelectorAll(".well-card").forEach((c) => {
     const ans = collectFrom(c);
-    if (Object.keys(ans).length) wellRows.push({ well_id: c.dataset.well, answers: ans });
+    if (Object.keys(ans).length) wellRows.push({ id: uuid(), well_id: c.dataset.well, answers: ans });
   });
   if (Object.keys(tankAnswers).length === 0 && wellRows.length === 0) {
     formStatus.textContent = "Answer at least one item before saving.";
     return;
   }
+  const payload = {
+    id: uuid(),
+    tank_id: currentTank.id,
+    auditor: currentUser ? currentUser.email : null,
+    audited_at: new Date().toISOString(),
+    tank_answers: tankAnswers,
+    notes: generalNotes.value.trim() || null,
+    well_checks: wellRows,
+  };
   saveBtn.disabled = true;
   formStatus.textContent = "Saving…";
-  const { data: visit, error } = await sb.from("visits")
-    .insert({ tank_id: currentTank.id, auditor: currentUser ? currentUser.email : null, tank_answers: tankAnswers, notes: generalNotes.value.trim() || null })
-    .select("id").single();
-  if (error) { saveBtn.disabled = false; formStatus.textContent = ""; return fail("Could not save visit", error); }
-  if (wellRows.length) {
-    const rows = wellRows.map((r) => ({ visit_id: visit.id, well_id: r.well_id, answers: r.answers }));
-    const { error: e2 } = await sb.from("well_checks").insert(rows);
-    if (e2) { saveBtn.disabled = false; formStatus.textContent = ""; return fail("Saved tank but not wells", e2); }
+  // Durable local write FIRST — we only tell the user "saved" once it's safely
+  // on the device. Syncing to the server is a separate, retryable step.
+  try {
+    await window.AuditDB.put({ id: payload.id, payload, status: "pending", created_at: Date.now(), tank_id: currentTank.id, tank_label: currentTank.label });
+  } catch (e) {
+    saveBtn.disabled = false; formStatus.textContent = "";
+    return fail("Couldn't save on this device", e);
   }
   saveBtn.disabled = false;
   clearDraft();
   resetVisitForm();
-  toast("Visit saved");
+  toast(navigator.onLine ? "Visit saved" : "Saved offline — will sync");
+  await refreshSync();
   await loadHistory();
+  flushQueue();
+}
+
+// ---------------------------------------------------------------------------
+// Sync engine — flush the local queue to the server, idempotently
+// ---------------------------------------------------------------------------
+let flushing = false;
+async function flushQueue() {
+  if (flushing || !navigator.onLine) { refreshSync(); return; }
+  flushing = true;
+  let changed = false;
+  try {
+    const items = await window.AuditDB.all();
+    for (const item of items) {
+      if (item.status === "error") continue; // wait for a manual retry
+      let res;
+      try { res = await sb.rpc("submit_visit", { payload: item.payload }); }
+      catch (e) { break; } // network failure — stop, keep everything queued
+      if (res && res.error) {
+        if (res.error.code) { await window.AuditDB.put({ ...item, status: "error", error: res.error.message }); changed = true; }
+        else break; // transient — stop and retry later
+      } else {
+        await window.AuditDB.remove(item.id); changed = true; // confirmed on server
+      }
+    }
+  } finally {
+    flushing = false;
+  }
+  await refreshSync();
+  if (changed) {
+    if (!dashboardView.hidden) loadDashboard();
+    if (currentTank && !visitView.hidden) loadHistory();
+  }
+}
+
+async function refreshSync() {
+  let items = [];
+  try { items = await window.AuditDB.all(); } catch (e) {}
+  const total = items.length;
+  const erroredOnly = total > 0 && items.every((i) => i.status === "error");
+  syncBadge.hidden = total === 0;
+  syncBadge.textContent = String(total);
+  syncBadge.classList.toggle("err", erroredOnly);
+  offlineBanner.hidden = navigator.onLine;
+  syncBtn.classList.toggle("offline", !navigator.onLine);
+  if (!syncDrawer.hidden) renderSyncList(items);
+}
+
+async function renderSyncList(items) {
+  if (!items) { try { items = await window.AuditDB.all(); } catch (e) { items = []; } }
+  const online = navigator.onLine;
+  syncStatus.innerHTML =
+    `<div class="sync-state ${online ? "on" : "off"}">● ${online ? "Online" : "Offline"}</div>` +
+    `<div class="muted">${items.length ? `${items.length} visit${items.length === 1 ? "" : "s"} waiting to sync` : "All visits synced"}</div>`;
+  syncNow.disabled = !online || items.length === 0;
+  syncNow.textContent = online ? "Sync now" : "Sync now (offline)";
+  if (!items.length) { syncList.innerHTML = '<p class="empty">Nothing pending — you\'re all caught up. ✅</p>'; return; }
+  syncList.innerHTML = items.map((it) => {
+    const p = it.payload;
+    const nw = (p.well_checks || []).length;
+    const badge = it.status === "error" ? `<span class="badge fail">error</span>` : `<span class="badge pending">pending</span>`;
+    const err = it.status === "error" ? `<div class="sync-err">${esc(it.error || "Failed to sync")}</div>` : "";
+    return `<div class="sync-item">
+        <div class="rc-main"><div class="rc-title">${esc(it.tank_label || "Tank")}</div><div class="rc-sub">${fmtDate(p.audited_at)} · ${nw} well${nw === 1 ? "" : "s"}</div>${err}</div>
+        ${badge}
+        <button type="button" class="sync-del" data-id="${it.id}" title="Discard">✕</button>
+      </div>`;
+  }).join("");
+  syncList.querySelectorAll(".sync-del").forEach((b) => b.addEventListener("click", () => discardPending(b.dataset.id)));
+}
+
+async function discardPending(id) {
+  if (!confirm("Discard this unsynced visit? It will be permanently lost.")) return;
+  try { await window.AuditDB.remove(id); } catch (e) { return fail("Couldn't discard", e); }
+  toast("Discarded");
+  await refreshSync();
+  await renderSyncList();
+  if (currentTank && !visitView.hidden) loadHistory();
 }
 
 function resetVisitForm() {
@@ -598,14 +748,49 @@ function setProductDefault() {
 async function loadHistory() {
   if (!currentTank) return;
   historyEl.innerHTML = '<p class="muted">Loading…</p>';
-  const { data, error } = await sb.from("visits")
-    .select("id,auditor,audited_at,tank_answers,notes,well_checks(well_id,answers)")
-    .eq("tank_id", currentTank.id).order("audited_at", { ascending: false });
-  if (error) return fail("Could not load history", error);
-  historyCount.textContent = data.length ? `${data.length} visit${data.length === 1 ? "" : "s"}` : "";
-  if (!data.length) { historyEl.innerHTML = '<p class="empty">No visits recorded yet for this tank.</p>'; return; }
-  historyEl.innerHTML = data.map(renderVisitEntry).join("");
-  historyEl.querySelectorAll(".del-visit").forEach((b) => b.addEventListener("click", () => deleteVisit(b.dataset.id)));
+  // Unsynced visits saved on this device for this tank.
+  let pendings = [];
+  try { pendings = (await window.AuditDB.all()).filter((p) => p.payload.tank_id === currentTank.id); } catch (e) {}
+  // Server visits (only if online).
+  let server = [];
+  if (navigator.onLine) {
+    try {
+      const { data, error } = await sb.from("visits")
+        .select("id,auditor,audited_at,tank_answers,notes,well_checks(well_id,answers)")
+        .eq("tank_id", currentTank.id).order("audited_at", { ascending: false });
+      if (!error && data) server = data;
+    } catch (e) {}
+  }
+  const total = pendings.length + server.length;
+  historyCount.textContent = total ? `${total} visit${total === 1 ? "" : "s"}` : "";
+  if (!total) {
+    historyEl.innerHTML = `<p class="empty">${navigator.onLine ? "No visits recorded yet for this tank." : "No visits on this device for this tank."}</p>`;
+    return;
+  }
+  historyEl.innerHTML = pendings.map(renderPendingEntry).join("") + server.map(renderVisitEntry).join("");
+  historyEl.querySelectorAll(".del-visit:not(.del-pending)").forEach((b) => b.addEventListener("click", () => deleteVisit(b.dataset.id)));
+  historyEl.querySelectorAll(".del-pending").forEach((b) => b.addEventListener("click", () => discardPending(b.dataset.id)));
+}
+
+function renderPendingEntry(it) {
+  const v = it.payload;
+  let pass = 0, failc = 0;
+  const tally = (a) => { for (const x of Object.values(a || {})) { if (x === "pass") pass++; else if (x === "fail") failc++; } };
+  tally(v.tank_answers);
+  (v.well_checks || []).forEach((wc) => tally(wc.answers));
+  const badges = (failc ? `<span class="badge fail">${failc} fail</span>` : "") + (pass ? `<span class="badge pass">${pass} pass</span>` : "");
+  const status = it.status === "error" ? `<span class="badge fail">sync error</span>` : `<span class="badge pending">pending sync</span>`;
+  const tankBlock = sectionsHtml(window.TANK_SECTIONS, v.tank_answers || {}, "Tank / skid");
+  const wellBlocks = (v.well_checks || []).map((wc) => sectionsHtml(window.WELL_SECTIONS, wc.answers || {}, currentWellsById[wc.well_id] || "Well")).join("");
+  const notes = v.notes ? `<div class="ds"><h4>Notes</h4><div class="ans-row"><span>${esc(v.notes)}</span></div></div>` : "";
+  const errLine = it.status === "error" ? `<div class="sync-err">${esc(it.error || "Failed to sync")}</div>` : "";
+  return `<details class="audit-entry pending">
+      <summary><span><span class="when">${fmtDate(v.audited_at)}</span> ${status}</span><span class="badges">${badges}</span></summary>
+      <div class="audit-detail">${errLine}
+        <button type="button" class="del-visit del-pending" data-id="${it.id}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>Discard (not synced)</button>
+        ${tankBlock}${wellBlocks}${notes}
+      </div>
+    </details>`;
 }
 
 function renderVisitEntry(v) {
@@ -653,6 +838,13 @@ async function deleteVisit(id) {
 // ---------------------------------------------------------------------------
 function countFails(ans) { return Object.values(ans || {}).filter((v) => v === "fail").length; }
 function labelFor(key) { return window.ITEM_BY_KEY[key] ? window.ITEM_BY_KEY[key].label : key; }
+function uuid() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0, v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function fmtDate(iso) { const d = new Date(iso); return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
 let toastTimer;
