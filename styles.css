@@ -151,6 +151,7 @@ select { appearance: none; background-image: url("data:image/svg+xml;utf8,<svg x
 }
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
 .icon-btn {
+  position: relative;
   display: grid; place-items: center;
   width: 36px; height: 36px; flex-shrink: 0;
   background: var(--surface-2); color: var(--muted);
@@ -308,11 +309,14 @@ main { max-width: 760px; margin: 0 auto; padding: 16px 16px calc(var(--tabbar-h)
   display: flex; justify-content: center; gap: 8px; padding: 8px;
 }
 .tab {
+  position: relative;
   flex: 1; max-width: 200px;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   background: none; border: none; color: var(--muted);
   font-size: 0.72rem; font-weight: 600; padding: 6px; cursor: pointer; border-radius: 12px;
 }
+/* Badge sits on the tab's icon (icon is centered at the top of the tab) */
+.tab .badge-count { top: 2px; right: calc(50% - 20px); }
 .tab svg { width: 24px; height: 24px; }
 .tab[aria-current="true"] { color: var(--accent); }
 
@@ -402,5 +406,6 @@ input[type="search"] { -webkit-appearance: none; }
   .tab { flex-direction: row; gap: 8px; max-width: none; flex: 0 0 auto; padding: 8px 16px; font-size: 0.9rem; border-radius: 999px; }
   .tab svg { width: 18px; height: 18px; }
   .tab[aria-current="true"] { background: var(--surface-2); }
+  .tab .badge-count { top: 3px; right: 6px; }
   .toast { bottom: 24px; }
 }

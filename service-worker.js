@@ -1,15 +1,15 @@
 // Field Audit service worker — caches the app shell so it loads with no signal.
 // Bump CACHE_VERSION (and the ?v= asset versions) together on every deploy.
-const CACHE_VERSION = "v15";
+const CACHE_VERSION = "v16";
 const CACHE = "fieldaudit-" + CACHE_VERSION;
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=15",
-  "./config.js?v=15",
-  "./questions.js?v=15",
-  "./db.js?v=15",
-  "./app.js?v=15",
+  "./styles.css?v=16",
+  "./config.js?v=16",
+  "./questions.js?v=16",
+  "./db.js?v=16",
+  "./app.js?v=16",
   "./supabase.min.js",
   "./manifest.json",
   "./icon-192.png",
