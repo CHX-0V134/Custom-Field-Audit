@@ -23,6 +23,12 @@ const activityEl = document.getElementById("activity");
 const refreshBtn = document.getElementById("refresh-btn");
 const dashFilterNote = document.getElementById("dash-filter-note");
 
+const actionsView = document.getElementById("actions-view");
+const actionsList = document.getElementById("actions-list");
+const actionsCount = document.getElementById("actions-count");
+const actionsRefresh = document.getElementById("actions-refresh");
+const actionsTabBadge = document.getElementById("actions-tab-badge");
+
 const accountSelect = document.getElementById("account-select");
 const tankSelect = document.getElementById("tank-select");
 const tankSearch = document.getElementById("tank-search");
@@ -86,6 +92,7 @@ loginBtn.addEventListener("click", enterApp);
 loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") enterApp(); });
 signoutBtn.addEventListener("click", signOut);
 refreshBtn.addEventListener("click", loadDashboard);
+actionsRefresh.addEventListener("click", loadActions);
 tabs.forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 
 accountSelect.addEventListener("change", onAccountChange);
@@ -192,9 +199,11 @@ function switchTab(name) {
   tabs.forEach((t) => t.setAttribute("aria-current", t.dataset.tab === name ? "true" : "false"));
   dashboardView.hidden = name !== "dashboard";
   auditView.hidden = name !== "audit";
-  viewTitle.textContent = name === "dashboard" ? "Dashboard" : "Audit";
+  actionsView.hidden = name !== "actions";
+  viewTitle.textContent = name === "dashboard" ? "Dashboard" : name === "audit" ? "Audit" : "Action Items";
   window.scrollTo({ top: 0 });
   if (name === "dashboard") loadDashboard();
+  else if (name === "actions") loadActions();
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +297,7 @@ function onFiltersChanged() {
   updateFilterCount();
   populateTankSelect();
   if (!dashboardView.hidden) loadDashboard();
+  if (!actionsView.hidden) loadActions();
 }
 
 function activeFilterCount() {
@@ -431,6 +441,7 @@ async function loadDashboard() {
     const latestByTank = {};
     for (const v of visits) if (!latestByTank[v.tank_id]) latestByTank[v.tank_id] = v;
     const attention = Object.values(latestByTank).map((v) => ({ v, fails: visitFails(v) })).filter((x) => x.fails > 0).sort((a, b) => b.fails - a.fails);
+    setActionsBadge(attention.reduce((n, x) => n + x.fails, 0));
 
     renderKpis({ tanks: fTanks.length, audited: Object.keys(latestByTank).length, visits: visits.length, attention: attention.length });
     renderAttention(attention, acctById, wellName);
@@ -496,6 +507,76 @@ function gotoTank(accountId, tankId) {
   tankSearchVal = ""; tankSearch.value = "";
   populateTankSelect();
   selectTank(tankId);
+}
+
+// ---------------------------------------------------------------------------
+// Action Items — auto punch-list of open fails from each tank's latest visit
+// ---------------------------------------------------------------------------
+function computeOpenItems(allVisits) {
+  const passIds = new Set(allTanks.filter(tankPasses).map((t) => t.id));
+  const wellName = Object.fromEntries(allWells.map((w) => [w.id, w.name]));
+  const latestByTank = {};
+  for (const v of allVisits) if (passIds.has(v.tank_id) && !latestByTank[v.tank_id]) latestByTank[v.tank_id] = v;
+  const items = [];
+  for (const v of Object.values(latestByTank)) {
+    const t = tankById[v.tank_id];
+    if (!t) continue;
+    for (const [k, val] of Object.entries(v.tank_answers || {})) if (val === "fail") items.push({ tank: t, well: null, key: k, when: v.audited_at, auditor: v.auditor });
+    for (const wc of v.well_checks || []) for (const [k, val] of Object.entries(wc.answers || {})) if (val === "fail") items.push({ tank: t, well: wellName[wc.well_id] || "Well", key: k, when: v.audited_at, auditor: v.auditor });
+  }
+  items.sort((a, b) => a.tank.label.localeCompare(b.tank.label) || (a.well || "").localeCompare(b.well || "") || a.key.localeCompare(b.key));
+  return items;
+}
+
+function setActionsBadge(n) { actionsTabBadge.hidden = !n; actionsTabBadge.textContent = String(n); }
+
+let actionsLoading = false;
+async function loadActions() {
+  if (actionsLoading || !allTanks.length) { if (!allTanks.length) return; }
+  actionsLoading = true;
+  try {
+    if (!navigator.onLine) {
+      actionsCount.textContent = "";
+      actionsList.innerHTML = '<p class="empty">Action items need a connection. Your saved audits sync first, then this list refreshes.</p>';
+      return;
+    }
+    let allVisits;
+    try {
+      const r = await withTimeout(sb.from("visits")
+        .select("id,tank_id,auditor,audited_at,tank_answers,well_checks(well_id,answers)")
+        .order("audited_at", { ascending: false }), 12000);
+      if (r.error) throw r.error;
+      allVisits = r.data;
+    } catch (e) {
+      actionsCount.textContent = "";
+      actionsList.innerHTML = '<p class="empty">Couldn\'t reach the server (weak signal). Tap Refresh when you have a better connection.</p>';
+      return;
+    }
+    const items = computeOpenItems(allVisits);
+    setActionsBadge(items.length);
+    renderActions(items);
+  } finally {
+    actionsLoading = false;
+  }
+}
+
+function renderActions(items) {
+  const acctById = Object.fromEntries(accountsList.map((a) => [a.id, a.name]));
+  actionsCount.textContent = items.length ? `${items.length} open${activeFilterCount() ? " (filtered)" : ""}` : "";
+  if (!items.length) { actionsList.innerHTML = '<p class="empty">No open action items — everything\'s passing. ✅</p>'; return; }
+  actionsList.innerHTML = items.map((it) => {
+    const acct = acctById[it.tank.account_id] || "";
+    const where = it.well ? `${esc(it.tank.label)} · ${esc(it.well)}` : `${esc(it.tank.label)} · Tank / skid`;
+    return `<button type="button" class="row-card" data-acct="${it.tank.account_id}" data-tank="${it.tank.id}">
+        <div class="rc-main">
+          <div class="rc-title">${esc(labelFor(it.key))}</div>
+          <div class="rc-sub">${where}</div>
+          <div class="rc-sub">${esc(acct)} · ${fmtDate(it.when)}${it.auditor ? " · " + esc(it.auditor) : ""}</div>
+        </div>
+        <span class="badge fail">Fail</span>
+      </button>`;
+  }).join("");
+  actionsList.querySelectorAll(".row-card").forEach((b) => b.addEventListener("click", () => gotoTank(b.dataset.acct, b.dataset.tank)));
 }
 
 // ---------------------------------------------------------------------------
@@ -691,6 +772,7 @@ async function flushQueue() {
   await refreshSync();
   if (changed) {
     if (!dashboardView.hidden) loadDashboard();
+    if (!actionsView.hidden) loadActions();
     if (currentTank && !visitView.hidden) loadHistory();
   }
 }
