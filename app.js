@@ -42,6 +42,7 @@ const entryForm = document.getElementById("entry-form");
 const newVisitBtn = document.getElementById("new-visit-btn");
 const cancelVisitBtn = document.getElementById("cancel-visit-btn");
 const tankSummary = document.getElementById("tank-summary");
+const editBanner = document.getElementById("edit-banner");
 const auditorDisplay = document.getElementById("auditor-display");
 const tankFields = document.getElementById("tank-fields");
 const wellsEl = document.getElementById("wells");
@@ -72,6 +73,9 @@ const offlineBanner = document.getElementById("offline-banner");
 let currentUser = null;
 let currentTank = null;
 let currentWellsById = {};
+let editingVisitId = null;
+let editingMeta = null;
+let historyById = {};
 let wired = false;
 const STORAGE_KEY = "audit_user_email";
 const TOGGLE_VALUES = ["pass", "fail", "na"];
@@ -108,7 +112,7 @@ tankSelect.addEventListener("change", () => selectTank(tankSelect.value));
 tankSearch.addEventListener("input", () => { tankSearchVal = tankSearch.value.trim().toLowerCase(); populateTankSelect(); });
 saveBtn.addEventListener("click", saveVisit);
 newVisitBtn.addEventListener("click", showEntryForm);
-cancelVisitBtn.addEventListener("click", showDetails);
+cancelVisitBtn.addEventListener("click", cancelEntry);
 visitView.addEventListener("click", onVisitClick);
 visitView.addEventListener("input", onVisitInput);
 
@@ -400,10 +404,50 @@ function showDetails() {
   newVisitBtn.classList.toggle("resume", hasDraft());
 }
 function showEntryForm() {
+  if (!editingVisitId && hasDraft()) restoreDraft(); // make "Resume draft" reliable
   entryForm.hidden = false;
   newVisitBtn.hidden = true;
-  formStatus.textContent = hasDraft() ? "Draft restored" : "";
+  formStatus.textContent = !editingVisitId && hasDraft() ? "Draft restored" : "";
   entryForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function editVisit(id) {
+  const v = historyById[id];
+  if (!v) return;
+  editingVisitId = id;
+  editingMeta = { audited_at: v.audited_at, auditor: v.auditor };
+
+  // Load the visit's values into the form (clear inputs/selects first so nothing stale lingers).
+  tankFields.querySelectorAll("input[data-key],select[data-key]").forEach((i) => (i.value = ""));
+  applyAnswers(tankFields, v.tank_answers || {});
+  const ansByWell = {};
+  (v.well_checks || []).forEach((wc) => { ansByWell[wc.well_id] = wc.answers || {}; });
+  wellsEl.querySelectorAll(".well-card").forEach((c) => {
+    c.querySelectorAll("input[data-key],select[data-key]").forEach((i) => (i.value = ""));
+    applyAnswers(c, ansByWell[c.dataset.well] || {});
+    updateWellStatus(c);
+  });
+  generalNotes.value = v.notes || "";
+
+  saveBtn.textContent = "Update visit";
+  editBanner.hidden = false;
+  editBanner.textContent = `Editing the ${fmtDate(v.audited_at)} audit — saving overwrites it.`;
+  formStatus.textContent = "";
+  newVisitBtn.hidden = true;
+  entryForm.hidden = false;
+  entryForm.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function exitEditMode() {
+  editingVisitId = null;
+  editingMeta = null;
+  saveBtn.textContent = "Save visit";
+  editBanner.hidden = true;
+}
+
+function cancelEntry() {
+  if (editingVisitId) { exitEditMode(); resetVisitForm(); }
+  showDetails();
 }
 
 function renderWells(wells) {
@@ -862,7 +906,7 @@ function handleCopy(btn) {
 
 function draftKey() { return currentTank ? "draft_" + currentTank.id : null; }
 function saveDraft() {
-  if (!currentTank) return;
+  if (!currentTank || editingVisitId) return; // editing doesn't touch the new-visit draft
   const draft = { tank: collectFrom(tankFields), wells: {}, notes: generalNotes.value };
   wellsEl.querySelectorAll(".well-card").forEach((c) => { draft.wells[c.dataset.well] = collectFrom(c); });
   const empty = Object.keys(draft.tank).length === 0 && !draft.notes.trim() &&
@@ -898,11 +942,12 @@ async function saveVisit() {
     formStatus.textContent = "Answer at least one item before saving.";
     return;
   }
+  const editing = !!editingVisitId;
   const payload = {
-    id: uuid(),
+    id: editing ? editingVisitId : uuid(),
     tank_id: currentTank.id,
-    auditor: currentUser ? currentUser.email : null,
-    audited_at: new Date().toISOString(),
+    auditor: editing ? editingMeta.auditor : (currentUser ? currentUser.email : null),
+    audited_at: editing ? editingMeta.audited_at : new Date().toISOString(),
     tank_answers: tankAnswers,
     notes: generalNotes.value.trim() || null,
     well_checks: wellRows,
@@ -918,10 +963,12 @@ async function saveVisit() {
     return fail("Couldn't save on this device", e);
   }
   saveBtn.disabled = false;
-  clearDraft();
+  if (editing) exitEditMode(); else clearDraft();
   resetVisitForm();
   showDetails();
-  toast(navigator.onLine ? "Visit saved" : "Saved offline — will sync");
+  toast(editing
+    ? (navigator.onLine ? "Visit updated" : "Update saved offline — will sync")
+    : (navigator.onLine ? "Visit saved" : "Saved offline — will sync"));
   await refreshSync();
   await loadHistory();
   flushQueue();
@@ -1041,11 +1088,16 @@ async function loadHistory() {
   if (navigator.onLine) {
     try {
       const { data, error } = await withTimeout(sb.from("visits")
-        .select("id,auditor,audited_at,tank_answers,notes,well_checks(well_id,answers)")
+        .select("id,auditor,audited_at,tank_answers,notes,well_checks(id,well_id,answers)")
         .eq("tank_id", currentTank.id).order("audited_at", { ascending: false }), 10000);
       if (!error && data) server = data;
     } catch (e) {}
   }
+  // An unsynced edit replaces the server copy in the list (avoid showing both).
+  const pendingIds = new Set(pendings.map((p) => p.payload.id));
+  server = server.filter((v) => !pendingIds.has(v.id));
+  historyById = Object.fromEntries(server.map((v) => [v.id, v]));
+
   const total = pendings.length + server.length;
   historyCount.textContent = total ? `${total} visit${total === 1 ? "" : "s"}` : "";
   if (!total) {
@@ -1055,6 +1107,7 @@ async function loadHistory() {
   historyEl.innerHTML = pendings.map(renderPendingEntry).join("") + server.map(renderVisitEntry).join("");
   const firstEntry = historyEl.querySelector(".audit-entry");
   if (firstEntry) firstEntry.open = true; // show the most recent audit's details by default
+  historyEl.querySelectorAll(".edit-visit").forEach((b) => b.addEventListener("click", () => editVisit(b.dataset.id)));
   historyEl.querySelectorAll(".del-visit:not(.del-pending)").forEach((b) => b.addEventListener("click", () => deleteVisit(b.dataset.id)));
   historyEl.querySelectorAll(".del-pending").forEach((b) => b.addEventListener("click", () => discardPending(b.dataset.id)));
 }
@@ -1092,7 +1145,10 @@ function renderVisitEntry(v) {
   return `<details class="audit-entry">
       <summary><span><span class="when">${fmtDate(v.audited_at)}</span>${v.auditor ? `<span class="who"> · ${esc(v.auditor)}</span>` : ""}</span><span class="badges">${badges}</span></summary>
       <div class="audit-detail">
-        <button type="button" class="del-visit" data-id="${v.id}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>Delete visit</button>
+        <div class="entry-actions">
+          <button type="button" class="edit-visit" data-id="${v.id}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit</button>
+          <button type="button" class="del-visit" data-id="${v.id}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>Delete</button>
+        </div>
         ${tankBlock}${wellBlocks}${notes}
       </div>
     </details>`;
