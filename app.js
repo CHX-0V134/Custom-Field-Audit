@@ -619,7 +619,10 @@ function renderVisitEntry(v) {
   const notes = v.notes ? `<div class="ds"><h4>Notes</h4><div class="ans-row"><span>${esc(v.notes)}</span></div></div>` : "";
   return `<details class="audit-entry">
       <summary><span><span class="when">${fmtDate(v.audited_at)}</span>${v.auditor ? `<span class="who"> · ${esc(v.auditor)}</span>` : ""}</span><span class="badges">${badges}</span></summary>
-      <div class="audit-detail">${tankBlock}${wellBlocks}${notes}<button type="button" class="del-visit" data-id="${v.id}">Delete this visit</button></div>
+      <div class="audit-detail">
+        <button type="button" class="del-visit" data-id="${v.id}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>Delete visit</button>
+        ${tankBlock}${wellBlocks}${notes}
+      </div>
     </details>`;
 }
 function sectionsHtml(sections, answers, groupTitle) {
@@ -638,7 +641,7 @@ function answerRow(item, value) {
   return `<div class="ans-row"><span>${esc(item.label)}</span>${display}</div>`;
 }
 async function deleteVisit(id) {
-  if (!confirm("Delete this visit permanently?")) return;
+  if (!confirm("Are you sure? This will permanently delete this visit and its well checks. This can't be undone.")) return;
   const { error } = await sb.from("visits").delete().eq("id", id);
   if (error) return fail("Could not delete visit", error);
   toast("Visit deleted");

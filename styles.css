@@ -263,7 +263,14 @@ main { max-width: 760px; margin: 0 auto; padding: 16px 16px calc(var(--tabbar-h)
 .ans-row .v.pass { color: var(--pass); }
 .ans-row .v.fail { color: var(--fail); }
 .ans-row .v.na { color: var(--na); }
-.del-audit { margin-top: 12px; background: none; border: none; color: var(--fail); font-size: 0.82rem; cursor: pointer; padding: 6px 0; }
+.del-visit {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin: 2px 0 14px;
+  background: var(--fail-bg); color: var(--fail);
+  border: 1px solid var(--fail); border-radius: 8px;
+  padding: 9px 14px; font-size: 0.85rem; font-weight: 650; cursor: pointer;
+}
+.del-visit:active { background: var(--fail); color: #fff; }
 
 .empty { text-align: center; color: var(--muted); padding: 18px 8px; font-size: 0.9rem; }
 
