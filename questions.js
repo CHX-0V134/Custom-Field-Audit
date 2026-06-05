@@ -67,8 +67,8 @@ const WELL_SECTIONS = [
     id: "injection",
     title: "Injection",
     items: [
-      { key: "last_known_injection_rate", label: "Last known injection rate (from service report)", type: "text", placeholder: "e.g. 2.5 qt/day" },
-      { key: "current_injection_rate", label: "Current injection rate", type: "text", placeholder: "e.g. 2.5 qt/day" },
+      { key: "last_known_injection_rate", label: "Last known injection rate (from service report)", type: "text", inputmode: "decimal", placeholder: "e.g. 2.5" },
+      { key: "current_injection_rate", label: "Current injection rate", type: "text", inputmode: "decimal", placeholder: "e.g. 2.5" },
       { key: "psv_functioning", label: "PSV is functioning properly", type: "toggle" },
     ],
   },

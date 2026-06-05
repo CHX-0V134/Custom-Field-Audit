@@ -821,7 +821,8 @@ function renderRecordItem(item, scope) {
     const opts = (selectOptions[item.key] || []).map((o) => `<option value="${esc(o)}">${esc(o)}</option>`).join("");
     input = `<select id="${id}" data-key="${item.key}"><option value="">${esc(item.placeholder || "Select…")}</option>${opts}</select>`;
   } else {
-    input = `<input type="text" id="${id}" data-key="${item.key}"${ph} />`;
+    const im = item.inputmode ? ` inputmode="${item.inputmode}"` : "";
+    input = `<input type="text" id="${id}" data-key="${item.key}"${im}${ph} />`;
   }
   return `<div class="item record"><label class="item-label" for="${id}">${esc(item.label)}</label>${input}</div>`;
 }
