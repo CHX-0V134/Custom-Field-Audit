@@ -11,7 +11,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <title>Field Audit</title>
   <script>try { document.documentElement.dataset.theme = localStorage.getItem("audit_theme") || "dark"; } catch (e) {}</script>
-  <link rel="stylesheet" href="styles.css?v=14" />
+  <link rel="stylesheet" href="styles.css?v=15" />
 </head>
 <body>
   <!-- LOGIN -->
@@ -74,6 +74,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.3a2 2 0 0 1 3.4 0l8 13.4A2 2 0 0 1 20 20H4a2 2 0 0 1-1.7-3.3zM12 9v4M12 17h.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Actions</span>
           <span id="actions-tab-badge" class="badge-count" hidden>0</span>
+        </button>
+        <button type="button" class="tab" data-tab="insights">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Insights</span>
         </button>
       </div>
     </nav>
@@ -166,6 +170,22 @@
           <div id="actions-list"><p class="muted">Loading…</p></div>
         </div>
       </section>
+
+      <!-- INSIGHTS (customer report) -->
+      <section id="insights-view" class="tab-view" hidden>
+        <div class="view-head">
+          <h2>Insights</h2>
+          <button type="button" id="insights-refresh" class="ghost-btn">Refresh</button>
+        </div>
+        <p class="muted" id="insights-sub">Program summary across all audits.</p>
+        <div id="insights-kpis" class="kpi-grid"></div>
+        <div class="panel"><div class="panel-head"><h3>Compliance over time</h3><span class="muted">pass rate</span></div><div id="ins-trend"><p class="muted">Loading…</p></div></div>
+        <div class="panel"><div class="panel-head"><h3>Open issues by category</h3></div><div id="ins-bycat"></div></div>
+        <div class="panel"><div class="panel-head"><h3>Most common failed checks</h3></div><div id="ins-topchecks"></div></div>
+        <div class="panel"><div class="panel-head"><h3>Hotspots by area</h3></div><div id="ins-byarea"></div></div>
+        <div class="panel"><div class="panel-head"><h3>Hotspots by product</h3></div><div id="ins-byproduct"></div></div>
+        <div class="panel"><div class="panel-head"><h3>Operations</h3></div><div id="ins-ops"></div></div>
+      </section>
     </main>
 
     <!-- FILTER DRAWER -->
@@ -206,10 +226,10 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="supabase.min.js"></script>
-  <script src="config.js?v=14"></script>
-  <script src="questions.js?v=14"></script>
-  <script src="db.js?v=14"></script>
-  <script src="app.js?v=14"></script>
+  <script src="config.js?v=15"></script>
+  <script src="questions.js?v=15"></script>
+  <script src="db.js?v=15"></script>
+  <script src="app.js?v=15"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));

@@ -29,6 +29,10 @@ const actionsCount = document.getElementById("actions-count");
 const actionsRefresh = document.getElementById("actions-refresh");
 const actionsTabBadge = document.getElementById("actions-tab-badge");
 
+const insightsView = document.getElementById("insights-view");
+const insightsRefresh = document.getElementById("insights-refresh");
+const insightsKpis = document.getElementById("insights-kpis");
+
 const accountSelect = document.getElementById("account-select");
 const tankSelect = document.getElementById("tank-select");
 const tankSearch = document.getElementById("tank-search");
@@ -93,6 +97,7 @@ loginEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") enterApp(
 signoutBtn.addEventListener("click", signOut);
 refreshBtn.addEventListener("click", loadDashboard);
 actionsRefresh.addEventListener("click", loadActions);
+insightsRefresh.addEventListener("click", loadInsights);
 tabs.forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 
 accountSelect.addEventListener("change", onAccountChange);
@@ -200,10 +205,12 @@ function switchTab(name) {
   dashboardView.hidden = name !== "dashboard";
   auditView.hidden = name !== "audit";
   actionsView.hidden = name !== "actions";
-  viewTitle.textContent = name === "dashboard" ? "Dashboard" : name === "audit" ? "Audit" : "Action Items";
+  insightsView.hidden = name !== "insights";
+  viewTitle.textContent = name === "dashboard" ? "Dashboard" : name === "audit" ? "Audit" : name === "actions" ? "Action Items" : "Insights";
   window.scrollTo({ top: 0 });
   if (name === "dashboard") loadDashboard();
   else if (name === "actions") loadActions();
+  else if (name === "insights") loadInsights();
 }
 
 // ---------------------------------------------------------------------------
@@ -577,6 +584,153 @@ function renderActions(items) {
       </button>`;
   }).join("");
   actionsList.querySelectorAll(".row-card").forEach((b) => b.addEventListener("click", () => gotoTank(b.dataset.acct, b.dataset.tank)));
+}
+
+// ---------------------------------------------------------------------------
+// Insights — customer-facing program summary
+// ---------------------------------------------------------------------------
+let insightsLoading = false;
+async function loadInsights() {
+  if (insightsLoading || !allTanks.length) { if (!allTanks.length) return; }
+  insightsLoading = true;
+  try {
+    if (!navigator.onLine) {
+      insightsKpis.innerHTML = "";
+      document.getElementById("ins-trend").innerHTML = '<p class="empty">Insights need a connection. Saved audits sync first, then refresh here.</p>';
+      ["ins-bycat", "ins-topchecks", "ins-byarea", "ins-byproduct", "ins-ops"].forEach((id) => (document.getElementById(id).innerHTML = ""));
+      return;
+    }
+    let allVisits;
+    try {
+      const r = await withTimeout(sb.from("visits")
+        .select("id,tank_id,auditor,audited_at,tank_answers,well_checks(well_id,answers)")
+        .order("audited_at", { ascending: false }), 12000);
+      if (r.error) throw r.error;
+      allVisits = r.data;
+    } catch (e) {
+      insightsKpis.innerHTML = "";
+      document.getElementById("ins-trend").innerHTML = '<p class="empty">Couldn\'t reach the server (weak signal). Tap Refresh when you have a better connection.</p>';
+      return;
+    }
+    renderInsights(computeInsights(allVisits));
+  } finally {
+    insightsLoading = false;
+  }
+}
+
+function computeInsights(allVisits) {
+  const fTankIds = new Set(allTanks.filter(tankPasses).map((t) => t.id));
+  const fTanks = allTanks.filter((t) => fTankIds.has(t.id));
+  const visits = allVisits.filter((v) => fTankIds.has(v.tank_id));
+  const latestByTank = {};
+  for (const v of visits) if (!latestByTank[v.tank_id]) latestByTank[v.tank_id] = v;
+  const latest = Object.values(latestByTank);
+
+  // Current health (pass rate) from each tank's latest visit
+  let passC = 0, failC = 0;
+  const tally = (ans) => { for (const x of Object.values(ans || {})) { if (x === "pass") passC++; else if (x === "fail") failC++; } };
+  for (const v of latest) { tally(v.tank_answers); (v.well_checks || []).forEach((wc) => tally(wc.answers)); }
+  const healthRate = passC + failC ? Math.round((100 * passC) / (passC + failC)) : null;
+
+  // Open items (reuse) + breakdowns
+  const items = computeOpenItems(visits);
+  const group = (keyFn) => {
+    const m = {};
+    for (const it of items) { const k = keyFn(it) || "—"; m[k] = (m[k] || 0) + 1; }
+    return Object.entries(m).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  };
+  const byCat = group((it) => (window.ITEM_BY_KEY[it.key] || {}).section);
+  const byArea = group((it) => it.tank.location);
+  const byProduct = group((it) => it.tank.product);
+
+  // Closure rate: of everything that ever failed, how much now passes
+  const everFail = new Set(), curVal = {};
+  for (const v of visits) {
+    for (const [k, val] of Object.entries(v.tank_answers || {})) if (val === "fail") everFail.add("t|" + v.tank_id + "|" + k);
+    for (const wc of v.well_checks || []) for (const [k, val] of Object.entries(wc.answers || {})) if (val === "fail") everFail.add("w|" + wc.well_id + "|" + k);
+  }
+  for (const v of latest) {
+    for (const [k, val] of Object.entries(v.tank_answers || {})) curVal["t|" + v.tank_id + "|" + k] = val;
+    for (const wc of v.well_checks || []) for (const [k, val] of Object.entries(wc.answers || {})) curVal["w|" + wc.well_id + "|" + k] = val;
+  }
+  let resolved = 0, openIssues = 0;
+  for (const id of everFail) { const c = curVal[id]; if (c === "fail") openIssues++; else if (c === "pass" || c === "na") resolved++; }
+  const closureRate = resolved + openIssues ? Math.round((100 * resolved) / (resolved + openIssues)) : null;
+
+  // Compliance trend by month
+  const monthMap = {};
+  for (const v of visits) {
+    const ym = (v.audited_at || "").slice(0, 7);
+    const m = (monthMap[ym] = monthMap[ym] || { pass: 0, fail: 0 });
+    const t2 = (ans) => { for (const x of Object.values(ans || {})) { if (x === "pass") m.pass++; else if (x === "fail") m.fail++; } };
+    t2(v.tank_answers); (v.well_checks || []).forEach((wc) => t2(wc.answers));
+  }
+  const trend = Object.entries(monthMap).sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([ym, m]) => ({ label: monthLabel(ym), value: m.pass + m.fail ? Math.round((100 * m.pass) / (m.pass + m.fail)) : 0 }));
+
+  // Most common failed checks (all visits)
+  const checkFail = {};
+  for (const v of visits) {
+    for (const [k, val] of Object.entries(v.tank_answers || {})) if (val === "fail") checkFail[k] = (checkFail[k] || 0) + 1;
+    for (const wc of v.well_checks || []) for (const [k, val] of Object.entries(wc.answers || {})) if (val === "fail") checkFail[k] = (checkFail[k] || 0) + 1;
+  }
+  const topChecks = Object.entries(checkFail).map(([k, value]) => ({ label: labelFor(k), value })).sort((a, b) => b.value - a.value).slice(0, 6);
+
+  // Operations (from latest visits)
+  const wellName = Object.fromEntries(allWells.map((w) => [w.id, w.name]));
+  const zeroRate = [], inv = [];
+  for (const v of latest) {
+    const t = tankById[v.tank_id];
+    const ivol = v.tank_answers && v.tank_answers.current_inventory_volume;
+    if (ivol !== undefined && ivol !== "" && !isNaN(Number(ivol))) inv.push({ label: t.label, value: Number(ivol) });
+    for (const wc of v.well_checks || []) {
+      const r = wc.answers && wc.answers.current_injection_rate;
+      if (r !== undefined && /^0(\.0+)?(\s|$|qt|gal)/i.test(String(r).trim())) zeroRate.push({ tank: t.label, well: wellName[wc.well_id] || "Well" });
+    }
+  }
+  inv.sort((a, b) => a.value - b.value);
+
+  return {
+    tanksTotal: fTanks.length, tanksAudited: latest.length, visitsTotal: visits.length,
+    healthRate, open: items.length, closureRate, resolved,
+    byCat, byArea, byProduct, trend, topChecks, zeroRate, lowInv: inv.slice(0, 5),
+  };
+}
+
+function monthLabel(ym) {
+  if (!ym) return ym;
+  const [y, m] = ym.split("-");
+  return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(m) - 1] + " " + y;
+}
+
+function barRows(data, cls) {
+  if (!data || !data.length) return '<p class="empty">No data yet.</p>';
+  const max = Math.max.apply(null, data.map((d) => d.value).concat(1));
+  return data.map((d) => `<div class="bar-row"><span class="bar-label">${esc(d.label)}</span><span class="bar-track"><span class="bar-fill ${cls || ""}" style="width:${Math.round((100 * d.value) / max)}%"></span></span><span class="bar-val">${d.suffix ? d.value + d.suffix : d.value}</span></div>`).join("");
+}
+
+function renderInsights(ins) {
+  const cards = [
+    { num: ins.healthRate == null ? "—" : ins.healthRate + "%", lbl: "Compliance (pass rate)", cls: ins.healthRate == null ? "" : ins.healthRate >= 90 ? "good" : ins.healthRate < 75 ? "alert" : "" },
+    { num: `${ins.tanksAudited}/${ins.tanksTotal}`, lbl: "Tanks audited", cls: "" },
+    { num: ins.open, lbl: "Open issues", cls: ins.open > 0 ? "alert" : "good" },
+    { num: ins.closureRate == null ? "—" : ins.closureRate + "%", lbl: "Issues resolved", cls: "" },
+  ];
+  insightsKpis.innerHTML = cards.map((c) => `<div class="kpi ${c.cls}"><div class="num">${c.num}</div><div class="lbl">${c.lbl}</div></div>`).join("");
+
+  document.getElementById("ins-trend").innerHTML = ins.trend.length < 1 ? '<p class="empty">Not enough data yet.</p>' : barRows(ins.trend.map((t) => ({ label: t.label, value: t.value, suffix: "%" })), "pass");
+  document.getElementById("ins-bycat").innerHTML = barRows(ins.byCat, "fail");
+  document.getElementById("ins-topchecks").innerHTML = barRows(ins.topChecks, "fail");
+  document.getElementById("ins-byarea").innerHTML = barRows(ins.byArea, "fail");
+  document.getElementById("ins-byproduct").innerHTML = barRows(ins.byProduct, "fail");
+
+  const ops = [];
+  ops.push(`<div class="ds"><h4>Wells reporting 0 injection rate (${ins.zeroRate.length})</h4>` +
+    (ins.zeroRate.length ? ins.zeroRate.slice(0, 8).map((z) => `<div class="ans-row"><span>${esc(z.tank)} · ${esc(z.well)}</span><span class="v fail">0</span></div>`).join("") : '<p class="empty">None.</p>') + "</div>");
+  ops.push(`<div class="ds"><h4>Lowest current inventory</h4>` +
+    (ins.lowInv.length ? ins.lowInv.map((i) => `<div class="ans-row"><span>${esc(i.label)}</span><span class="v">${i.value} gal</span></div>`).join("") : '<p class="empty">No inventory recorded yet.</p>') + "</div>");
+  ops.push('<p class="hint" style="margin-top:10px">Note: "below target rate" needs target rates loaded (the ActiveTargetRate column wasn\'t imported). Say the word and I\'ll add it.</p>');
+  document.getElementById("ins-ops").innerHTML = ops.join("");
 }
 
 // ---------------------------------------------------------------------------
