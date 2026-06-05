@@ -364,6 +364,11 @@ input[type="search"] { -webkit-appearance: none; }
 .badge.pending { background: rgba(227,179,65,0.16); color: var(--warn); }
 .audit-entry.pending { border-color: rgba(227,179,65,0.45); }
 
+/* Action items: show the full check name (don't truncate) */
+#actions-list .row-card { align-items: flex-start; }
+#actions-list .rc-title { white-space: normal; }
+#actions-list .badge { margin-top: 2px; }
+
 /* ---------- Toast ---------- */
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
