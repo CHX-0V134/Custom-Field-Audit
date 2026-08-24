@@ -37,6 +37,7 @@ const accountSelect = document.getElementById("account-select");
 const tankSelect = document.getElementById("tank-select");
 const tankSearch = document.getElementById("tank-search");
 const tankFilterNote = document.getElementById("tank-filter-note");
+const showArchivedToggle = document.getElementById("show-archived");
 const visitView = document.getElementById("visit-view");
 const entryForm = document.getElementById("entry-form");
 const newVisitBtn = document.getElementById("new-visit-btn");
@@ -89,6 +90,7 @@ let filterOptions = { state: [], location: [], product: [], asset_type: [] };
 let selectOptions = {}; // dropdown options for select-type questions, e.g. product list
 const filters = { state: new Set(), location: new Set(), product: new Set(), asset_type: new Set() };
 let tankSearchVal = "";
+let showArchived = false; // when false, tanks with active === false are hidden from the picker
 const FILTER_GROUPS = [
   { key: "state", title: "State" },
   { key: "location", title: "Area" },
@@ -110,6 +112,7 @@ tabs.forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.tab)))
 accountSelect.addEventListener("change", onAccountChange);
 tankSelect.addEventListener("change", () => selectTank(tankSelect.value));
 tankSearch.addEventListener("input", () => { tankSearchVal = tankSearch.value.trim().toLowerCase(); populateTankSelect(); });
+showArchivedToggle.addEventListener("change", () => { showArchived = showArchivedToggle.checked; populateTankSelect(); });
 saveBtn.addEventListener("click", saveVisit);
 newVisitBtn.addEventListener("click", showEntryForm);
 cancelVisitBtn.addEventListener("click", cancelEntry);
@@ -246,7 +249,7 @@ async function fetchCatalog() {
   try {
     const [accRes, tankRes, wellRes] = await Promise.all([
       sb.from("accounts").select("id,name").order("name"),
-      sb.from("tanks").select("id,account_id,label,state,location,product").order("label"),
+      sb.from("tanks").select("id,account_id,label,state,location,product,active").order("label"),
       sb.from("wells").select("id,tank_id,name,asset_type"),
     ]);
     if (accRes.error || tankRes.error || wellRes.error) return null;
@@ -346,7 +349,9 @@ function populateTankSelect() {
     tankFilterNote.textContent = "";
     return;
   }
-  const forAccount = allTanks.filter((t) => t.account_id === accountId);
+  // Hide archived (active === false) tanks from the picker unless the user opts in.
+  // Everything stays in allTanks/tankById so existing history still resolves names.
+  const forAccount = allTanks.filter((t) => t.account_id === accountId && (showArchived || t.active !== false));
   const list = forAccount.filter((t) => tankPasses(t) && (!tankSearchVal || t.label.toLowerCase().includes(tankSearchVal)));
   tankSelect.disabled = list.length === 0;
   tankSelect.innerHTML =
